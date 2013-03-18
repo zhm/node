@@ -228,11 +228,11 @@
             'deps/v8/include/v8.h',
             'deps/v8/include/v8-debug.h',
           ],
-          'dependencies': [ 'deps/v8/tools/gyp/v8.gyp:v8' ],
+          'dependencies': [ '../../v8/tools/gyp/v8.gyp:v8' ],
         }],
 
         [ 'node_shared_zlib=="false"', {
-          'dependencies': [ 'deps/zlib/zlib.gyp:zlib' ],
+          'dependencies': [ '../zlib/zlib.gyp:zlib' ],
         }],
 
         [ 'node_shared_http_parser=="false"', {
