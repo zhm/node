@@ -64,7 +64,7 @@
   'targets': [
     {
       'target_name': 'node',
-      'type': 'static_library',
+      'type': '<(component)',
 
       'dependencies': [
         'node_js2c#host',

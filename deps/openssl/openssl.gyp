@@ -11,7 +11,7 @@
   'targets': [
     {
       'target_name': 'openssl',
-      'type': '<(library)',
+      'type': '<(component)',
       'defines': [
         # No clue what these are for.
         'L_ENDIAN',

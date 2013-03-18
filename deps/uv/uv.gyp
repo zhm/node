@@ -21,7 +21,7 @@
   'targets': [
     {
       'target_name': 'libuv',
-      'type': '<(library)',
+      'type': '<(component)',
       'include_dirs': [
         'include',
         'include/uv-private',
@@ -155,7 +155,7 @@
             ],
           },
           'conditions': [
-            ['"<(library)" == "shared_library"', {
+            ['"<(component)" == "shared_library"', {
               'cflags': [ '-fPIC' ],
             }],
           ],
@@ -246,7 +246,7 @@
         [ 'OS in "mac freebsd dragonflybsd openbsd netbsd".split()', {
           'sources': [ 'src/unix/kqueue.c' ],
         }],
-        ['library=="shared_library"', {
+        ['component=="shared_library"', {
           'defines': [ 'BUILDING_UV_SHARED=1' ]
         }]
       ]
