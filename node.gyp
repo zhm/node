@@ -66,6 +66,10 @@
       'target_name': 'node',
       'type': '<(component)',
 
+      'includes': [
+        'config.gypi',
+      ],
+
       'dependencies': [
         'node_js2c#host',
       ],
