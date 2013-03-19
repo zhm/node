@@ -2980,6 +2980,8 @@ char** Init(int argc, char *argv[]) {
   // Initialize prog_start_time to get relative uptime.
   uv_uptime(&prog_start_time);
 
+#if 0
+
   // Make inherited handles noninheritable.
   uv_disable_stdio_inheritance();
 
@@ -3023,18 +3025,23 @@ char** Init(int argc, char *argv[]) {
   RegisterSignalHandler(SIGTERM, SignalExit);
 #endif // __POSIX__
 
+#endif
+
   uv_idle_init(uv_default_loop(), &tick_spinner);
 
   uv_check_init(uv_default_loop(), &check_immediate_watcher);
   uv_unref((uv_handle_t*) &check_immediate_watcher);
   uv_idle_init(uv_default_loop(), &idle_immediate_dummy);
 
+#if 0
   V8::SetFatalErrorHandler(node::OnFatalError);
+#endif
 
   // Fetch a reference to the main isolate, so we have a reference to it
   // even when we need it to access it from another (debugger) thread.
   node_isolate = Isolate::GetCurrent();
 
+#if 0
   // If the --debug flag was specified then initialize the debug thread.
   if (use_debug_agent) {
     EnableDebug(debug_wait_connect);
@@ -3048,6 +3055,7 @@ char** Init(int argc, char *argv[]) {
     uv_unref((uv_handle_t*)&signal_watcher);
 #endif // __POSIX__
   }
+#endif
 
   return argv;
 }
