@@ -2629,9 +2629,9 @@ class Hmac : public ObjectWrap {
     }
     HMAC_CTX_init(&ctx);
     if (key_len == 0) {
-      HMAC_Init(&ctx, "", 0, md);
+      OpenSSL_HMAC_Init(&ctx, "", 0, md);
     } else {
-      HMAC_Init(&ctx, key, key_len, md);
+      OpenSSL_HMAC_Init(&ctx, key, key_len, md);
     }
     initialised_ = true;
     return true;
@@ -2640,7 +2640,7 @@ class Hmac : public ObjectWrap {
 
   int HmacUpdate(char* data, int len) {
     if (!initialised_) return 0;
-    HMAC_Update(&ctx, (unsigned char*)data, len);
+    OpenSSL_HMAC_Update(&ctx, (unsigned char*)data, len);
     return 1;
   }
 
