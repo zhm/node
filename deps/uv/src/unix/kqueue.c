@@ -259,15 +259,22 @@ static void uv__fs_event(uv_loop_t* loop, uv__io_t* w, unsigned int fflags) {
   uv_fs_event_t* handle;
   struct kevent ev;
   int events;
+  size_t len;
+  char path[MAXPATHLEN];
 
   handle = container_of(w, uv_fs_event_t, event_watcher);
 
-  if (fflags & (NOTE_ATTRIB | NOTE_EXTEND))
-    events = UV_CHANGE;
-  else
-    events = UV_RENAME;
+  path[0] = 0;
 
-  handle->cb(handle, NULL, events, 0);
+  if (fflags & (NOTE_ATTRIB | NOTE_EXTEND)) {
+    events = UV_CHANGE;
+  } else {
+    if (!(fflags & NOTE_DELETE) && handle->event_watcher.fd != -1)
+      fcntl(handle->event_watcher.fd, F_GETPATH, &path);
+    events = UV_RENAME;
+  }
+
+  handle->cb(handle, path[0] ? path : NULL, events, 0);
 
   if (handle->event_watcher.fd == -1)
     return;
