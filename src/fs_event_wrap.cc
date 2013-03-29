@@ -144,6 +144,9 @@ void FSEventWrap::OnEvent(uv_fs_event_t* handle, const char* filename,
   else if (events & UV_CHANGE) {
     eventStr = String::New("change");
   }
+  else if (events & UV_OTHER) {
+    eventStr = String::New("other");
+  }
   else {
     assert(0 && "bad fs events flag");
     abort();

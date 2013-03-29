@@ -266,12 +266,16 @@ static void uv__fs_event(uv_loop_t* loop, uv__io_t* w, unsigned int fflags) {
 
   path[0] = 0;
 
-  if (fflags & (NOTE_ATTRIB | NOTE_EXTEND)) {
+  if (fflags & NOTE_WRITE) {
     events = UV_CHANGE;
-  } else {
+  } else if (fflags & NOTE_DELETE) {
+    events = UV_RENAME;
+  } else if (fflags & NOTE_RENAME) {
+    events = UV_RENAME;
     if (!(fflags & NOTE_DELETE) && handle->event_watcher.fd != -1)
       fcntl(handle->event_watcher.fd, F_GETPATH, &path);
-    events = UV_RENAME;
+  } else {
+    events = UV_OTHER;
   }
 
   handle->cb(handle, path[0] ? path : NULL, events, 0);

@@ -1629,7 +1629,8 @@ UV_EXTERN int uv_fs_fchown(uv_loop_t* loop, uv_fs_t* req, uv_file file,
 
 enum uv_fs_event {
   UV_RENAME = 1,
-  UV_CHANGE = 2
+  UV_CHANGE = 2,
+  UV_OTHER  = 4
 };
 
 
