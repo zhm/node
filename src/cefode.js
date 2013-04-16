@@ -19,6 +19,12 @@
   global.root = global;
   global.Buffer = NativeModule.require('buffer').Buffer;
 
+  // Add setImmediate.
+  global.setImmediate = function(func, args) {
+    return setTimeout(func, 0, args);
+  };
+  global.clearImmediate = clearTimeout;
+
   // Force use module.js in window context, so required third party code will
   // run under window context.
   var source = NativeModule.getSource('module');
