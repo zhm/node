@@ -200,13 +200,17 @@ static void Spin(uv_idle_t* handle, int status) {
     process_tickFromSpinner = Persistent<Function>::New(cb);
   }
 
+#if 0
   TryCatch try_catch;
+#endif
 
   process_tickFromSpinner->Call(process, 0, NULL);
 
+#if 0
   if (try_catch.HasCaught()) {
     FatalException(try_catch);
   }
+#endif
 }
 
 
