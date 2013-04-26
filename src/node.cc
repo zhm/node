@@ -2553,7 +2553,7 @@ void Load(Handle<Object> process_l) {
   TryCatch try_catch;
 
   Local<Value> f_value = ExecuteString(MainSource(),
-                                       IMMUTABLE_STRING("node.js"));
+                                       v8::String::New("node.js"));
   if (try_catch.HasCaught())  {
     ReportException(try_catch, true);
     exit(10);
