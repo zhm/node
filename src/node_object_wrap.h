@@ -23,6 +23,7 @@
 #define object_wrap_h
 
 #include "node.h"
+#include "node_internals.h"
 #include "v8.h"
 #include <assert.h>
 
@@ -76,7 +77,7 @@ class NODE_EXTERN ObjectWrap {
 
 
   inline void MakeWeak (void) {
-    handle_.MakeWeak(this, WeakCallback);
+    handle_.MakeWeak(node_isolate, this, WeakCallback);
     handle_.MarkIndependent();
   }
 
@@ -111,7 +112,7 @@ class NODE_EXTERN ObjectWrap {
 
 
  private:
-  static void WeakCallback (v8::Persistent<v8::Value> value, void *data) {
+  static void WeakCallback (v8::Isolate*, v8::Persistent<v8::Value> value, void *data) {
     v8::HandleScope scope;
 
     ObjectWrap *obj = static_cast<ObjectWrap*>(data);
