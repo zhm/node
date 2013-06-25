@@ -1,0 +1,8 @@
+#!/bin/bash
+
+BUCKET=$1
+[ -z $BUCKET ] && echo 'Must provide bucket name' && exit
+
+ls *.tar.gz >/dev/null 2>&1 || DESTCPU=ia32 make binary
+
+s3cmd put --acl-public *.tar.gz "s3://$BUCKET/node/dist/"

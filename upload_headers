@@ -3,10 +3,6 @@
 BUCKET=$1
 [ -z $BUCKET ] && echo 'Must provide bucket name' && exit
 
-ls *.tar.gz >/dev/null 2>&1 || DESTCPU=ia32 make binary
-
-s3cmd put --acl-public *.tar.gz "s3://$BUCKET/node/dist/"
-
 function parse_node_version {
   local NODE_VERSION_H
   NODE_VERSION_H="src/node_version.h"
