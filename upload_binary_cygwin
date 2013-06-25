@@ -1,0 +1,23 @@
+#!/bin/bash
+
+BUCKET=$1
+[ -z $BUCKET ] && echo 'Must provide bucket name' && exit
+
+function parse_node_version {
+  local NODE_VERSION_H
+  NODE_VERSION_H="src/node_version.h"
+  local MAJOR MINOR PATCH
+  MAJOR=`grep NODE_MAJOR_VERSION "$NODE_VERSION_H" | head -n 1`
+  MAJOR=${MAJOR:27}
+  MINOR=`grep NODE_MINOR_VERSION "$NODE_VERSION_H" | head -n 1`
+  MINOR=${MINOR:27}
+  PATCH=`grep NODE_PATCH_VERSION "$NODE_VERSION_H" | head -n 1`
+  PATCH=${PATCH:27}
+  NODE_VERSION="v$MAJOR.$MINOR.$PATCH"
+}
+
+parse_node_version
+
+ls Release/node.exe >/dev/null 2>&1 || cmd.exe /c vcbuild.bat nosign
+
+s3cmd put --acl-public Release/node.* "s3://$BUCKET/node/dist/$NODE_VERSION/"
