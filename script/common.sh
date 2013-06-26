@@ -1,8 +1,5 @@
 #!/bin/bash
 
-BUCKET=$1
-[ -z $BUCKET ] && echo 'Must provide bucket name' && exit
-
 function parse_node_version {
   local NODE_VERSION_H
   NODE_VERSION_H="src/node_version.h"
@@ -17,7 +14,3 @@ function parse_node_version {
 }
 
 parse_node_version
-
-ls Release/node.exe >/dev/null 2>&1 || cmd.exe /c vcbuild.bat nosign
-
-s3cmd put --acl-public Release/node.* "s3://$BUCKET/node/dist/$NODE_VERSION/"

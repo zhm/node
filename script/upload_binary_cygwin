@@ -1,0 +1,10 @@
+#!/bin/bash
+
+BUCKET=$1
+[ -z $BUCKET ] && echo 'Must provide bucket name' && exit
+
+source ./script/common.sh
+
+ls Release/node.exe >/dev/null 2>&1 || cmd.exe /c vcbuild.bat nosign
+
+s3cmd put --acl-public Release/node.* "s3://$BUCKET/node/dist/$NODE_VERSION/"
