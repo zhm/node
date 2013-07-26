@@ -43,13 +43,16 @@
               # The dependency on v8_base should come from a transitive
               # dependency however the Android toolchain requires libv8_base.a
               # to appear before libv8_snapshot.a so it's listed explicitly.
-              'dependencies': ['v8_base', 'v8_snapshot'],
+              'dependencies': ['v8_base.<(v8_target_arch)', 'v8_snapshot'],
             },
             {
               # The dependency on v8_base should come from a transitive
               # dependency however the Android toolchain requires libv8_base.a
               # to appear before libv8_snapshot.a so it's listed explicitly.
-              'dependencies': ['v8_base', 'v8_nosnapshot'],
+              'dependencies': [
+                'v8_base.<(v8_target_arch)',
+                'v8_nosnapshot.<(v8_target_arch)',
+              ],
             }],
             ['component=="shared_library"', {
               'type': '<(component)',
@@ -68,6 +71,16 @@
                   'USING_V8_SHARED',
                 ],
               },
+              'target_conditions': [
+                ['OS=="android" and _toolset=="target"', {
+                  'libraries': [
+                    '-llog',
+                  ],
+                  'include_dirs': [
+                    'src/common/android/include',
+                  ],
+                }],
+              ],
               'conditions': [
                 ['OS=="mac"', {
                   'xcode_settings': {
@@ -91,14 +104,17 @@
         },
         {
           'target_name': 'v8_snapshot',
-          'type': '<(library)',
+          'type': 'static_library',
           'conditions': [
             ['want_separate_host_toolset==1', {
               'toolsets': ['host', 'target'],
-              'dependencies': ['mksnapshot#host', 'js2c#host'],
+              'dependencies': [
+                'mksnapshot.<(v8_target_arch)#host',
+                'js2c#host',
+              ],
             }, {
               'toolsets': ['target'],
-              'dependencies': ['mksnapshot', 'js2c'],
+              'dependencies': ['mksnapshot.<(v8_target_arch)', 'js2c'],
             }],
             ['component=="shared_library"', {
               'defines': [
@@ -114,7 +130,7 @@
             }],
           ],
           'dependencies': [
-            'v8_base',
+            'v8_base.<(v8_target_arch)',
           ],
           'include_dirs+': [
             '../../src',
@@ -128,7 +144,7 @@
             {
               'action_name': 'run_mksnapshot',
               'inputs': [
-                '<(PRODUCT_DIR)/<(EXECUTABLE_PREFIX)mksnapshot<(EXECUTABLE_SUFFIX)',
+                '<(PRODUCT_DIR)/<(EXECUTABLE_PREFIX)mksnapshot.<(v8_target_arch)<(EXECUTABLE_SUFFIX)',
               ],
               'outputs': [
                 '<(INTERMEDIATE_DIR)/snapshot.cc',
@@ -139,39 +155,6 @@
                   '--logfile', '<(INTERMEDIATE_DIR)/snapshot.log',
                 ],
               },
-              'conditions': [
-                ['v8_target_arch=="arm"', {
-                  # The following rules should be consistent with chromium's
-                  # common.gypi and V8's runtime rule to ensure they all generate
-                  # the same correct machine code. The following issue is about
-                  # V8's runtime rule about vfpv3 and neon:
-                  # http://code.google.com/p/v8/issues/detail?id=914
-                  'conditions': [
-                    ['armv7==1', {
-                      # The ARM Architecture Manual mandates VFPv3 if NEON is
-                      # available.
-                      # The current V8 doesn't use d16-d31, so for vfpv3-d16, we can
-                      # also enable vfp3 for the better performance.
-                      'conditions': [
-                        ['arm_neon!=1 and arm_fpu!="vfpv3" and arm_fpu!="vfpv3-d16"', {
-                          'variables': {
-                            'mksnapshot_flags': [
-                              '--noenable_vfp3',
-                            ],
-                          },
-                        }],
-                      ],
-                    },{ # else: armv7!=1
-                      'variables': {
-                        'mksnapshot_flags': [
-                          '--noenable_armv7',
-                          '--noenable_vfp3',
-                        ],
-                      },
-                    }],
-                  ],
-                }],
-              ],
               'action': [
                 '<@(_inputs)',
                 '<@(mksnapshot_flags)',
@@ -181,10 +164,10 @@
           ],
         },
         {
-          'target_name': 'v8_nosnapshot',
-          'type': '<(library)',
+          'target_name': 'v8_nosnapshot.<(v8_target_arch)',
+          'type': 'static_library',
           'dependencies': [
-            'v8_base',
+            'v8_base.<(v8_target_arch)',
           ],
           'include_dirs+': [
             '../../src',
@@ -211,15 +194,15 @@
           ]
         },
         {
-          'target_name': 'v8_base',
-          'type': '<(library)',
+          'target_name': 'v8_base.<(v8_target_arch)',
+          'type': 'static_library',
           'variables': {
             'optimize': 'max',
           },
           'include_dirs+': [
             '../../src',
           ],
-          'sources': [
+          'sources': [  ### gcmole(all) ###
             '../../src/accessors.cc',
             '../../src/accessors.h',
             '../../src/allocation.cc',
@@ -254,6 +237,7 @@
             '../../src/circular-queue.h',
             '../../src/code-stubs.cc',
             '../../src/code-stubs.h',
+            '../../src/code-stubs-hydrogen.cc',
             '../../src/code.h',
             '../../src/codegen.cc',
             '../../src/codegen.h',
@@ -333,6 +317,9 @@
             '../../src/heap-inl.h',
             '../../src/heap-profiler.cc',
             '../../src/heap-profiler.h',
+            '../../src/heap-snapshot-generator-inl.h',
+            '../../src/heap-snapshot-generator.cc',
+            '../../src/heap-snapshot-generator.h',
             '../../src/heap.cc',
             '../../src/heap.h',
             '../../src/hydrogen-instructions.cc',
@@ -344,8 +331,6 @@
             '../../src/ic.h',
             '../../src/incremental-marking.cc',
             '../../src/incremental-marking.h',
-            '../../src/inspector.cc',
-            '../../src/inspector.h',
             '../../src/interface.cc',
             '../../src/interface.h',
             '../../src/interpreter-irregexp.cc',
@@ -353,6 +338,8 @@
             '../../src/isolate.cc',
             '../../src/isolate.h',
             '../../src/json-parser.h',
+            '../../src/json-stringifier.h',
+            '../../src/jsregexp-inl.h',
             '../../src/jsregexp.cc',
             '../../src/jsregexp.h',
             '../../src/lazy-instance.h',
@@ -365,9 +352,6 @@
             '../../src/lithium.h',
             '../../src/liveedit.cc',
             '../../src/liveedit.h',
-            '../../src/liveobjectlist-inl.h',
-            '../../src/liveobjectlist.cc',
-            '../../src/liveobjectlist.h',
             '../../src/log-inl.h',
             '../../src/log-utils.cc',
             '../../src/log-utils.h',
@@ -376,6 +360,8 @@
             '../../src/macro-assembler.h',
             '../../src/mark-compact.cc',
             '../../src/mark-compact.h',
+            '../../src/marking-thread.h',
+            '../../src/marking-thread.cc',
             '../../src/messages.cc',
             '../../src/messages.h',
             '../../src/natives.h',
@@ -427,6 +413,8 @@
             '../../src/runtime.h',
             '../../src/safepoint-table.cc',
             '../../src/safepoint-table.h',
+            '../../src/sampler.cc',
+            '../../src/sampler.h',
             '../../src/scanner-character-streams.cc',
             '../../src/scanner-character-streams.h',
             '../../src/scanner.cc',
@@ -455,6 +443,8 @@
             '../../src/strtod.h',
             '../../src/stub-cache.cc',
             '../../src/stub-cache.h',
+            '../../src/sweeper-thread.h',
+            '../../src/sweeper-thread.cc',
             '../../src/token.cc',
             '../../src/token.h',
             '../../src/transitions-inl.h',
@@ -467,6 +457,7 @@
             '../../src/unicode-inl.h',
             '../../src/unicode.cc',
             '../../src/unicode.h',
+            '../../src/uri.h',
             '../../src/utils-inl.h',
             '../../src/utils.cc',
             '../../src/utils.h',
@@ -500,7 +491,7 @@
               'toolsets': ['target'],
             }],
             ['v8_target_arch=="arm"', {
-              'sources': [
+              'sources': [  ### gcmole(arch:arm) ###
                 '../../src/arm/assembler-arm-inl.h',
                 '../../src/arm/assembler-arm.cc',
                 '../../src/arm/assembler-arm.h',
@@ -534,7 +525,7 @@
               ],
             }],
             ['v8_target_arch=="ia32" or v8_target_arch=="mac" or OS=="mac"', {
-              'sources': [
+              'sources': [  ### gcmole(arch:ia32) ###
                 '../../src/ia32/assembler-ia32-inl.h',
                 '../../src/ia32/assembler-ia32.cc',
                 '../../src/ia32/assembler-ia32.h',
@@ -565,7 +556,7 @@
               ],
             }],
             ['v8_target_arch=="mipsel"', {
-              'sources': [
+              'sources': [  ### gcmole(arch:mipsel) ###
                 '../../src/mips/assembler-mips.cc',
                 '../../src/mips/assembler-mips.h',
                 '../../src/mips/assembler-mips-inl.h',
@@ -599,7 +590,7 @@
               ],
             }],
             ['v8_target_arch=="x64" or v8_target_arch=="mac" or OS=="mac"', {
-              'sources': [
+              'sources': [  ### gcmole(arch:x64) ###
                 '../../src/x64/assembler-x64-inl.h',
                 '../../src/x64/assembler-x64.cc',
                 '../../src/x64/assembler-x64.h',
@@ -639,7 +630,7 @@
                     }],
                   ],
                 },
-                'sources': [
+                'sources': [  ### gcmole(os:linux) ###
                   '../../src/platform-linux.cc',
                   '../../src/platform-posix.cc'
                 ],
@@ -724,15 +715,43 @@
               ]},
             ],
             ['OS=="win"', {
-              'sources': [
-                '../../src/platform-win32.cc',
-                '../../src/win32-math.cc',
-                '../../src/win32-math.h',
-              ],
-              'msvs_disabled_warnings': [4351, 4355, 4800],
-              'link_settings':  {
-                'libraries': [ '-lwinmm.lib', '-lws2_32.lib' ],
+              'variables': {
+                'gyp_generators': '<!(echo $GYP_GENERATORS)',
               },
+              'conditions': [
+                ['gyp_generators=="make"', {
+                  'variables': {
+                    'build_env': '<!(uname -o)',
+                  },
+                  'conditions': [
+                    ['build_env=="Cygwin"', {
+                      'sources': [
+                        '../../src/platform-cygwin.cc',
+                        '../../src/platform-posix.cc',
+                      ],
+                    }, {
+                      'sources': [
+                        '../../src/platform-win32.cc',
+                        '../../src/win32-math.h',
+                        '../../src/win32-math.cc',
+                      ],
+                    }],
+                  ],
+                  'link_settings':  {
+                    'libraries': [ '-lwinmm', '-lws2_32' ],
+                  },
+                }, {
+                  'sources': [
+                    '../../src/platform-win32.cc',
+                    '../../src/win32-math.h',
+                    '../../src/win32-math.cc',
+                  ],
+                  'msvs_disabled_warnings': [4351, 4355, 4800],
+                  'link_settings':  {
+                    'libraries': [ '-lwinmm.lib', '-lws2_32.lib' ],
+                  },
+                }],
+              ],
             }],
             ['component=="shared_library"', {
               'defines': [
@@ -777,8 +796,12 @@
             ],
             'experimental_library_files': [
               '../../src/macros.py',
+              '../../src/symbol.js',
               '../../src/proxy.js',
               '../../src/collection.js',
+              '../../src/object-observe.js',
+              '../../src/typedarray.js',
+              '../../src/generator.js'
             ],
           },
           'actions': [
@@ -849,11 +872,11 @@
            ]
         },
         {
-          'target_name': 'mksnapshot',
+          'target_name': 'mksnapshot.<(v8_target_arch)',
           'type': 'executable',
           'dependencies': [
-            'v8_base',
-            'v8_nosnapshot',
+            'v8_base.<(v8_target_arch)',
+            'v8_nosnapshot.<(v8_target_arch)',
           ],
           'include_dirs+': [
             '../../src',
@@ -900,75 +923,8 @@
             }],
           ],
         },
-        {
-          'target_name': 'preparser_lib',
-          'type': '<(library)',
-          'include_dirs+': [
-            '../../src',
-          ],
-          'sources': [
-            '../../include/v8-preparser.h',
-            '../../include/v8stdint.h',
-            '../../src/allocation.cc',
-            '../../src/allocation.h',
-            '../../src/atomicops.h',
-            '../../src/atomicops_internals_x86_gcc.cc',
-            '../../src/bignum.cc',
-            '../../src/bignum.h',
-            '../../src/bignum-dtoa.cc',
-            '../../src/bignum-dtoa.h',
-            '../../src/cached-powers.cc',
-            '../../src/cached-powers.h',
-            '../../src/char-predicates-inl.h',
-            '../../src/char-predicates.h',
-            '../../src/checks.h',
-            '../../src/conversions-inl.h',
-            '../../src/conversions.cc',
-            '../../src/conversions.h',
-            '../../src/diy-fp.cc',
-            '../../src/diy-fp.h',
-            '../../src/double.h',
-            '../../src/dtoa.cc',
-            '../../src/dtoa.h',
-            '../../src/fast-dtoa.cc',
-            '../../src/fast-dtoa.h',
-            '../../src/fixed-dtoa.cc',
-            '../../src/fixed-dtoa.h',
-            '../../src/globals.h',
-            '../../src/hashmap.h',
-            '../../src/list-inl.h',
-            '../../src/list.h',
-            '../../src/once.cc',
-            '../../src/once.h',
-            '../../src/preparse-data-format.h',
-            '../../src/preparse-data.cc',
-            '../../src/preparse-data.h',
-            '../../src/preparser.cc',
-            '../../src/preparser.h',
-            '../../src/preparser-api.cc',
-            '../../src/scanner.cc',
-            '../../src/scanner.h',
-            '../../src/strtod.cc',
-            '../../src/strtod.h',
-            '../../src/token.cc',
-            '../../src/token.h',
-            '../../src/unicode-inl.h',
-            '../../src/unicode.cc',
-            '../../src/unicode.h',
-            '../../src/utils-inl.h',
-            '../../src/utils.cc',
-            '../../src/utils.h',
-          ],
-          'conditions': [
-            ['OS=="win"', {
-              'sources': [
-                '../../src/win32-math.cc',
-                '../../src/win32-math.h',
-              ]}],
-          ],
-        },
       ],
-    }, { # use_system_v8 != 0
+    }, {  # use_system_v8 != 0
       'targets': [
         {
           'target_name': 'v8',
@@ -979,6 +935,47 @@
             }, {
               'toolsets': ['target'],
             }],
+          ],
+          'variables': {
+            'shim_headers_path': '<(SHARED_INTERMEDIATE_DIR)/shim_headers/<(_target_name)/<(_toolset)',
+          },
+          'include_dirs++': [
+            '<(shim_headers_path)',
+          ],
+          'all_dependent_settings': {
+            'include_dirs+++': [
+              '<(shim_headers_path)',
+            ],
+          },
+          'actions': [
+            {
+              'variables': {
+                'generator_path': '../../../tools/generate_shim_headers/generate_shim_headers.py',
+                'generator_args': [
+                  '--headers-root', '../../include',
+                  '--output-directory', '<(shim_headers_path)',
+                  'v8-debug.h',
+                  'v8-preparser.h',
+                  'v8-profiler.h',
+                  'v8-testing.h',
+                  'v8.h',
+                  'v8stdint.h',
+                ],
+              },
+              'action_name': 'generate_<(_target_name)_shim_headers',
+              'inputs': [
+                '<(generator_path)',
+              ],
+              'outputs': [
+                '<!@pymod_do_main(generate_shim_headers <@(generator_args) --outputs)',
+              ],
+              'action': ['python',
+                         '<(generator_path)',
+                         '<@(generator_args)',
+                         '--generate',
+              ],
+              'message': 'Generating <(_target_name) shim headers.',
+            },
           ],
           'link_settings': {
             'libraries': [

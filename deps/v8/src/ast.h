@@ -75,6 +75,7 @@ namespace internal {
 
 #define STATEMENT_NODE_LIST(V)                  \
   V(Block)                                      \
+  V(ModuleStatement)                            \
   V(ExpressionStatement)                        \
   V(EmptyStatement)                             \
   V(IfStatement)                                \
@@ -101,6 +102,7 @@ namespace internal {
   V(ObjectLiteral)                              \
   V(ArrayLiteral)                               \
   V(Assignment)                                 \
+  V(Yield)                                      \
   V(Throw)                                      \
   V(Property)                                   \
   V(Call)                                       \
@@ -117,6 +119,10 @@ namespace internal {
   MODULE_NODE_LIST(V)                           \
   STATEMENT_NODE_LIST(V)                        \
   EXPRESSION_NODE_LIST(V)
+
+#ifdef WIN32
+#undef Yield
+#endif
 
 // Forward declarations
 class AstConstructionVisitor;
@@ -333,6 +339,9 @@ class Expression: public AstNode {
   // True iff the expression is the null literal.
   bool IsNullLiteral();
 
+  // True iff the expression is the undefined literal.
+  bool IsUndefinedLiteral();
+
   // Type feedback information for assignments and properties.
   virtual bool IsMonomorphic() {
     UNREACHABLE();
@@ -347,6 +356,10 @@ class Expression: public AstNode {
     SmallMapList* types = GetReceiverTypes();
     ASSERT(types != NULL && types->length() == 1);
     return types->at(0);
+  }
+  virtual KeyedAccessStoreMode GetStoreMode() {
+    UNREACHABLE();
+    return STANDARD_STORE;
   }
 
   BailoutId id() const { return id_; }
@@ -522,7 +535,7 @@ class ModuleDeclaration: public Declaration {
   ModuleDeclaration(VariableProxy* proxy,
                     Module* module,
                     Scope* scope)
-      : Declaration(proxy, LET, scope),
+      : Declaration(proxy, MODULE, scope),
         module_(module) {
   }
 
@@ -642,6 +655,25 @@ class ModuleUrl: public Module {
 
  private:
   Handle<String> url_;
+};
+
+
+class ModuleStatement: public Statement {
+ public:
+  DECLARE_NODE_TYPE(ModuleStatement)
+
+  VariableProxy* proxy() const { return proxy_; }
+  Block* body() const { return body_; }
+
+ protected:
+  ModuleStatement(VariableProxy* proxy, Block* body)
+      : proxy_(proxy),
+        body_(body) {
+  }
+
+ private:
+  VariableProxy* proxy_;
+  Block* body_;
 };
 
 
@@ -910,15 +942,18 @@ class WithStatement: public Statement {
  public:
   DECLARE_NODE_TYPE(WithStatement)
 
+  Scope* scope() { return scope_; }
   Expression* expression() const { return expression_; }
   Statement* statement() const { return statement_; }
 
  protected:
-  WithStatement(Expression* expression, Statement* statement)
-      : expression_(expression),
+  WithStatement(Scope* scope, Expression* expression, Statement* statement)
+      : scope_(scope),
+        expression_(expression),
         statement_(statement) { }
 
  private:
+  Scope* scope_;
   Expression* expression_;
   Statement* statement_;
 };
@@ -948,7 +983,7 @@ class CaseClause: public ZoneObject {
   TypeFeedbackId CompareId() { return compare_id_; }
   void RecordTypeFeedback(TypeFeedbackOracle* oracle);
   bool IsSmiCompare() { return compare_type_ == SMI_ONLY; }
-  bool IsSymbolCompare() { return compare_type_ == SYMBOL_ONLY; }
+  bool IsNameCompare() { return compare_type_ == NAME_ONLY; }
   bool IsStringCompare() { return compare_type_ == STRING_ONLY; }
   bool IsObjectCompare() { return compare_type_ == OBJECT_ONLY; }
 
@@ -960,7 +995,7 @@ class CaseClause: public ZoneObject {
   enum CompareTypeFeedback {
     NONE,
     SMI_ONLY,
-    SYMBOL_ONLY,
+    NAME_ONLY,
     STRING_ONLY,
     OBJECT_ONLY
   };
@@ -1151,7 +1186,7 @@ class Literal: public Expression {
   DECLARE_NODE_TYPE(Literal)
 
   virtual bool IsPropertyName() {
-    if (handle_->IsSymbol()) {
+    if (handle_->IsInternalizedString()) {
       uint32_t ignored;
       return !String::cast(*handle_)->AsArrayIndex(&ignored);
     }
@@ -1163,8 +1198,8 @@ class Literal: public Expression {
     return Handle<String>::cast(handle_);
   }
 
-  virtual bool ToBooleanIsTrue() { return handle_->ToBoolean()->IsTrue(); }
-  virtual bool ToBooleanIsFalse() { return handle_->ToBoolean()->IsFalse(); }
+  virtual bool ToBooleanIsTrue() { return handle_->BooleanValue(); }
+  virtual bool ToBooleanIsFalse() { return !handle_->BooleanValue(); }
 
   // Identity testers.
   bool IsNull() const {
@@ -1417,7 +1452,7 @@ class VariableProxy: public Expression {
   void MarkAsTrivial() { is_trivial_ = true; }
   void MarkAsLValue() { is_lvalue_ = true; }
 
-  // Bind this proxy to the variable var.
+  // Bind this proxy to the variable var. Interfaces must match.
   void BindTo(Variable* var);
 
  protected:
@@ -1461,7 +1496,9 @@ class Property: public Expression {
   void RecordTypeFeedback(TypeFeedbackOracle* oracle, Zone* zone);
   virtual bool IsMonomorphic() { return is_monomorphic_; }
   virtual SmallMapList* GetReceiverTypes() { return &receiver_types_; }
-  bool IsArrayLength() { return is_array_length_; }
+  virtual KeyedAccessStoreMode GetStoreMode() {
+    return STANDARD_STORE;
+  }
   bool IsUninitialized() { return is_uninitialized_; }
   TypeFeedbackId PropertyFeedbackId() { return reuse(id()); }
 
@@ -1477,7 +1514,6 @@ class Property: public Expression {
         load_id_(GetNextId(isolate)),
         is_monomorphic_(false),
         is_uninitialized_(false),
-        is_array_length_(false),
         is_string_length_(false),
         is_string_access_(false),
         is_function_prototype_(false) { }
@@ -1491,7 +1527,6 @@ class Property: public Expression {
   SmallMapList receiver_types_;
   bool is_monomorphic_ : 1;
   bool is_uninitialized_ : 1;
-  bool is_array_length_ : 1;
   bool is_string_length_ : 1;
   bool is_string_access_ : 1;
   bool is_function_prototype_ : 1;
@@ -1512,6 +1547,22 @@ class Call: public Expression {
   virtual SmallMapList* GetReceiverTypes() { return &receiver_types_; }
   virtual bool IsMonomorphic() { return is_monomorphic_; }
   CheckType check_type() const { return check_type_; }
+
+  void set_string_check(Handle<JSObject> holder) {
+    holder_ = holder;
+    check_type_ = STRING_CHECK;
+  }
+
+  void set_number_check(Handle<JSObject> holder) {
+    holder_ = holder;
+    check_type_ = NUMBER_CHECK;
+  }
+
+  void set_map_check() {
+    holder_ = Handle<JSObject>::null();
+    check_type_ = RECEIVER_MAP_CHECK;
+  }
+
   Handle<JSFunction> target() { return target_; }
 
   // A cache for the holder, set as a side effect of computing the target of the
@@ -1575,6 +1626,7 @@ class CallNew: public Expression {
   Handle<JSFunction> target() { return target_; }
 
   BailoutId ReturnId() const { return return_id_; }
+  ElementsKind elements_kind() const { return elements_kind_; }
 
  protected:
   CallNew(Isolate* isolate,
@@ -1586,7 +1638,8 @@ class CallNew: public Expression {
         arguments_(arguments),
         pos_(pos),
         is_monomorphic_(false),
-        return_id_(GetNextId(isolate)) { }
+        return_id_(GetNextId(isolate)),
+        elements_kind_(GetInitialFastElementsKind()) { }
 
  private:
   Expression* expression_;
@@ -1597,6 +1650,7 @@ class CallNew: public Expression {
   Handle<JSFunction> target_;
 
   const BailoutId return_id_;
+  ElementsKind elements_kind_;
 };
 
 
@@ -1734,6 +1788,9 @@ class CountOperation: public Expression {
   void RecordTypeFeedback(TypeFeedbackOracle* oracle, Zone* znoe);
   virtual bool IsMonomorphic() { return is_monomorphic_; }
   virtual SmallMapList* GetReceiverTypes() { return &receiver_types_; }
+  virtual KeyedAccessStoreMode GetStoreMode() {
+    return store_mode_;
+  }
 
   BailoutId AssignmentId() const { return assignment_id_; }
 
@@ -1749,6 +1806,8 @@ class CountOperation: public Expression {
       : Expression(isolate),
         op_(op),
         is_prefix_(is_prefix),
+        is_monomorphic_(false),
+        store_mode_(STANDARD_STORE),
         expression_(expr),
         pos_(pos),
         assignment_id_(GetNextId(isolate)),
@@ -1756,8 +1815,10 @@ class CountOperation: public Expression {
 
  private:
   Token::Value op_;
-  bool is_prefix_;
-  bool is_monomorphic_;
+  bool is_prefix_ : 1;
+  bool is_monomorphic_ : 1;
+  KeyedAccessStoreMode store_mode_ : 5;  // Windows treats as signed,
+                                         // must have extra bit.
   Expression* expression_;
   int pos_;
   const BailoutId assignment_id_;
@@ -1777,9 +1838,6 @@ class CompareOperation: public Expression {
 
   // Type feedback information.
   TypeFeedbackId CompareOperationFeedbackId() const { return reuse(id()); }
-  void RecordTypeFeedback(TypeFeedbackOracle* oracle);
-  bool IsSmiCompare() { return compare_type_ == SMI_ONLY; }
-  bool IsObjectCompare() { return compare_type_ == OBJECT_ONLY; }
 
   // Match special cases.
   bool IsLiteralCompareTypeof(Expression** expr, Handle<String>* check);
@@ -1796,8 +1854,7 @@ class CompareOperation: public Expression {
         op_(op),
         left_(left),
         right_(right),
-        pos_(pos),
-        compare_type_(NONE) {
+        pos_(pos) {
     ASSERT(Token::IsCompareOp(op));
   }
 
@@ -1806,9 +1863,6 @@ class CompareOperation: public Expression {
   Expression* left_;
   Expression* right_;
   int pos_;
-
-  enum CompareTypeFeedback { NONE, SMI_ONLY, OBJECT_ONLY };
-  CompareTypeFeedback compare_type_;
 };
 
 
@@ -1877,6 +1931,9 @@ class Assignment: public Expression {
   void RecordTypeFeedback(TypeFeedbackOracle* oracle, Zone* zone);
   virtual bool IsMonomorphic() { return is_monomorphic_; }
   virtual SmallMapList* GetReceiverTypes() { return &receiver_types_; }
+  virtual KeyedAccessStoreMode GetStoreMode() {
+    return store_mode_;
+  }
 
  protected:
   Assignment(Isolate* isolate,
@@ -1902,8 +1959,46 @@ class Assignment: public Expression {
   BinaryOperation* binary_operation_;
   const BailoutId assignment_id_;
 
-  bool is_monomorphic_;
+  bool is_monomorphic_ : 1;
+  KeyedAccessStoreMode store_mode_ : 5;  // Windows treats as signed,
+                                         // must have extra bit.
   SmallMapList receiver_types_;
+};
+
+
+class Yield: public Expression {
+ public:
+  DECLARE_NODE_TYPE(Yield)
+
+  enum Kind {
+    INITIAL,     // The initial yield that returns the unboxed generator object.
+    SUSPEND,     // A normal yield: { value: EXPRESSION, done: false }
+    DELEGATING,  // A yield*.
+    FINAL        // A return: { value: EXPRESSION, done: true }
+  };
+
+  Expression* generator_object() const { return generator_object_; }
+  Expression* expression() const { return expression_; }
+  Kind yield_kind() const { return yield_kind_; }
+  virtual int position() const { return pos_; }
+
+ protected:
+  Yield(Isolate* isolate,
+        Expression* generator_object,
+        Expression* expression,
+        Kind yield_kind,
+        int pos)
+      : Expression(isolate),
+        generator_object_(generator_object),
+        expression_(expression),
+        yield_kind_(yield_kind),
+        pos_(pos) { }
+
+ private:
+  Expression* generator_object_;
+  Expression* expression_;
+  Kind yield_kind_;
+  int pos_;
 };
 
 
@@ -1945,6 +2040,11 @@ class FunctionLiteral: public Expression {
   enum IsParenthesizedFlag {
     kIsParenthesized,
     kNotParenthesized
+  };
+
+  enum IsGeneratorFlag {
+    kIsGenerator,
+    kNotGenerator
   };
 
   DECLARE_NODE_TYPE(FunctionLiteral)
@@ -2007,6 +2107,10 @@ class FunctionLiteral: public Expression {
     bitfield_ = IsParenthesized::update(bitfield_, kIsParenthesized);
   }
 
+  bool is_generator() {
+    return IsGenerator::decode(bitfield_) == kIsGenerator;
+  }
+
   int ast_node_count() { return ast_properties_.node_count(); }
   AstProperties::Flags* flags() { return ast_properties_.flags(); }
   void set_ast_properties(AstProperties* ast_properties) {
@@ -2027,7 +2131,8 @@ class FunctionLiteral: public Expression {
                   Type type,
                   ParameterFlag has_duplicate_parameters,
                   IsFunctionFlag is_function,
-                  IsParenthesizedFlag is_parenthesized)
+                  IsParenthesizedFlag is_parenthesized,
+                  IsGeneratorFlag is_generator)
       : Expression(isolate),
         name_(name),
         scope_(scope),
@@ -2047,7 +2152,8 @@ class FunctionLiteral: public Expression {
         Pretenure::encode(false) |
         HasDuplicateParameters::encode(has_duplicate_parameters) |
         IsFunction::encode(is_function) |
-        IsParenthesized::encode(is_parenthesized);
+        IsParenthesized::encode(is_parenthesized) |
+        IsGenerator::encode(is_generator);
   }
 
  private:
@@ -2072,6 +2178,7 @@ class FunctionLiteral: public Expression {
   class HasDuplicateParameters: public BitField<ParameterFlag, 4, 1> {};
   class IsFunction: public BitField<IsFunctionFlag, 5, 1> {};
   class IsParenthesized: public BitField<IsParenthesizedFlag, 6, 1> {};
+  class IsGenerator: public BitField<IsGeneratorFlag, 7, 1> {};
 };
 
 
@@ -2479,40 +2586,51 @@ inline ModuleVariable::ModuleVariable(VariableProxy* proxy)
 
 class AstVisitor BASE_EMBEDDED {
  public:
-  AstVisitor() : isolate_(Isolate::Current()), stack_overflow_(false) { }
+  AstVisitor() {}
   virtual ~AstVisitor() { }
 
   // Stack overflow check and dynamic dispatch.
-  void Visit(AstNode* node) { if (!CheckStackOverflow()) node->Accept(this); }
+  virtual void Visit(AstNode* node) = 0;
 
   // Iteration left-to-right.
   virtual void VisitDeclarations(ZoneList<Declaration*>* declarations);
   virtual void VisitStatements(ZoneList<Statement*>* statements);
   virtual void VisitExpressions(ZoneList<Expression*>* expressions);
 
-  // Stack overflow tracking support.
-  bool HasStackOverflow() const { return stack_overflow_; }
-  bool CheckStackOverflow();
-
-  // If a stack-overflow exception is encountered when visiting a
-  // node, calling SetStackOverflow will make sure that the visitor
-  // bails out without visiting more nodes.
-  void SetStackOverflow() { stack_overflow_ = true; }
-  void ClearStackOverflow() { stack_overflow_ = false; }
-
   // Individual AST nodes.
 #define DEF_VISIT(type)                         \
   virtual void Visit##type(type* node) = 0;
   AST_NODE_LIST(DEF_VISIT)
 #undef DEF_VISIT
-
- protected:
-  Isolate* isolate() { return isolate_; }
-
- private:
-  Isolate* isolate_;
-  bool stack_overflow_;
 };
+
+
+#define DEFINE_AST_VISITOR_SUBCLASS_MEMBERS()                       \
+public:                                                             \
+  virtual void Visit(AstNode* node) {                               \
+    if (!CheckStackOverflow()) node->Accept(this);                  \
+  }                                                                 \
+                                                                    \
+  void SetStackOverflow() { stack_overflow_ = true; }               \
+  void ClearStackOverflow() { stack_overflow_ = false; }            \
+  bool HasStackOverflow() const { return stack_overflow_; }         \
+                                                                    \
+  bool CheckStackOverflow() {                                       \
+    if (stack_overflow_) return true;                               \
+    StackLimitCheck check(isolate_);                                \
+    if (!check.HasOverflowed()) return false;                       \
+    return (stack_overflow_ = true);                                \
+  }                                                                 \
+                                                                    \
+private:                                                            \
+  void InitializeAstVisitor() {                                     \
+    isolate_ = Isolate::Current();                                  \
+    stack_overflow_ = false;                                        \
+  }                                                                 \
+  Isolate* isolate() { return isolate_; }                           \
+                                                                    \
+  Isolate* isolate_;                                                \
+  bool stack_overflow_
 
 
 // ----------------------------------------------------------------------------
@@ -2647,6 +2765,11 @@ class AstNodeFactory BASE_EMBEDDED {
   STATEMENT_WITH_LABELS(SwitchStatement)
 #undef STATEMENT_WITH_LABELS
 
+  ModuleStatement* NewModuleStatement(VariableProxy* proxy, Block* body) {
+    ModuleStatement* stmt = new(zone_) ModuleStatement(proxy, body);
+    VISIT_AND_RETURN(ModuleStatement, stmt)
+  }
+
   ExpressionStatement* NewExpressionStatement(Expression* expression) {
     ExpressionStatement* stmt = new(zone_) ExpressionStatement(expression);
     VISIT_AND_RETURN(ExpressionStatement, stmt)
@@ -2667,9 +2790,11 @@ class AstNodeFactory BASE_EMBEDDED {
     VISIT_AND_RETURN(ReturnStatement, stmt)
   }
 
-  WithStatement* NewWithStatement(Expression* expression,
+  WithStatement* NewWithStatement(Scope* scope,
+                                  Expression* expression,
                                   Statement* statement) {
-    WithStatement* stmt = new(zone_) WithStatement(expression, statement);
+    WithStatement* stmt = new(zone_) WithStatement(
+        scope, expression, statement);
     VISIT_AND_RETURN(WithStatement, stmt)
   }
 
@@ -2854,6 +2979,15 @@ class AstNodeFactory BASE_EMBEDDED {
     VISIT_AND_RETURN(Assignment, assign)
   }
 
+  Yield* NewYield(Expression *generator_object,
+                  Expression* expression,
+                  Yield::Kind yield_kind,
+                  int pos) {
+    Yield* yield = new(zone_) Yield(
+        isolate_, generator_object, expression, yield_kind, pos);
+    VISIT_AND_RETURN(Yield, yield)
+  }
+
   Throw* NewThrow(Expression* exception, int pos) {
     Throw* t = new(zone_) Throw(isolate_, exception, pos);
     VISIT_AND_RETURN(Throw, t)
@@ -2872,13 +3006,14 @@ class AstNodeFactory BASE_EMBEDDED {
       FunctionLiteral::ParameterFlag has_duplicate_parameters,
       FunctionLiteral::Type type,
       FunctionLiteral::IsFunctionFlag is_function,
-      FunctionLiteral::IsParenthesizedFlag is_parenthesized) {
+      FunctionLiteral::IsParenthesizedFlag is_parenthesized,
+      FunctionLiteral::IsGeneratorFlag is_generator) {
     FunctionLiteral* lit = new(zone_) FunctionLiteral(
         isolate_, name, scope, body,
         materialized_literal_count, expected_property_count, handler_count,
         has_only_simple_this_property_assignments, this_property_assignments,
         parameter_count, type, has_duplicate_parameters, is_function,
-        is_parenthesized);
+        is_parenthesized, is_generator);
     // Top-level literal doesn't count for the AST's properties.
     if (is_function == FunctionLiteral::kIsFunction) {
       visitor_.VisitFunctionLiteral(lit);

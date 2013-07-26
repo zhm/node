@@ -110,7 +110,6 @@ var debugger_flags = {
     }
   },
 };
-var lol_is_enabled = %HasLOLEnabled();
 
 
 // Create a new break point object and add it to the list of break points.
@@ -1306,9 +1305,12 @@ ProtocolMessage.prototype.setOption = function(name, value) {
 };
 
 
-ProtocolMessage.prototype.failed = function(message) {
+ProtocolMessage.prototype.failed = function(message, opt_details) {
   this.success = false;
   this.message = message;
+  if (IS_OBJECT(opt_details)) {
+    this.error_details = opt_details;
+  }
 };
 
 
@@ -1354,6 +1356,9 @@ ProtocolMessage.prototype.toJSONProtocol = function() {
   }
   if (this.message) {
     json.message = this.message;
+  }
+  if (this.error_details) {
+    json.error_details = this.error_details;
   }
   json.running = this.running;
   return JSON.stringify(json);
@@ -1431,8 +1436,6 @@ DebugCommandProcessor.prototype.processDebugJSONRequest = function(
         this.setVariableValueRequest_(request, response);
       } else if (request.command == 'evaluate') {
         this.evaluateRequest_(request, response);
-      } else if (lol_is_enabled && request.command == 'getobj') {
-        this.getobjRequest_(request, response);
       } else if (request.command == 'lookup') {
         this.lookupRequest_(request, response);
       } else if (request.command == 'references') {
@@ -1461,28 +1464,6 @@ DebugCommandProcessor.prototype.processDebugJSONRequest = function(
       // GC tools:
       } else if (request.command == 'gc') {
         this.gcRequest_(request, response);
-
-      // LiveObjectList tools:
-      } else if (lol_is_enabled && request.command == 'lol-capture') {
-        this.lolCaptureRequest_(request, response);
-      } else if (lol_is_enabled && request.command == 'lol-delete') {
-        this.lolDeleteRequest_(request, response);
-      } else if (lol_is_enabled && request.command == 'lol-diff') {
-        this.lolDiffRequest_(request, response);
-      } else if (lol_is_enabled && request.command == 'lol-getid') {
-        this.lolGetIdRequest_(request, response);
-      } else if (lol_is_enabled && request.command == 'lol-info') {
-        this.lolInfoRequest_(request, response);
-      } else if (lol_is_enabled && request.command == 'lol-reset') {
-        this.lolResetRequest_(request, response);
-      } else if (lol_is_enabled && request.command == 'lol-retainers') {
-        this.lolRetainersRequest_(request, response);
-      } else if (lol_is_enabled && request.command == 'lol-path') {
-        this.lolPathRequest_(request, response);
-      } else if (lol_is_enabled && request.command == 'lol-print') {
-        this.lolPrintRequest_(request, response);
-      } else if (lol_is_enabled && request.command == 'lol-stats') {
-        this.lolStatsRequest_(request, response);
 
       } else {
         throw new Error('Unknown command "' + request.command + '" in request');
@@ -2137,16 +2118,14 @@ DebugCommandProcessor.prototype.evaluateRequest_ = function(request, response) {
     additional_context_object = {};
     for (var i = 0; i < additional_context.length; i++) {
       var mapping = additional_context[i];
-      if (!IS_STRING(mapping.name) || !IS_NUMBER(mapping.handle)) {
+
+      if (!IS_STRING(mapping.name)) {
         return response.failed("Context element #" + i +
-            " must contain name:string and handle:number");
+            " doesn't contain name:string property");
       }
-      var context_value_mirror = LookupMirror(mapping.handle);
-      if (!context_value_mirror) {
-        return response.failed("Context object '" + mapping.name +
-            "' #" + mapping.handle + "# not found");
-      }
-      additional_context_object[mapping.name] = context_value_mirror.value();
+
+      var raw_value = DebugCommandProcessor.resolveValue_(mapping);
+      additional_context_object[mapping.name] = raw_value;
     }
   }
 
@@ -2184,24 +2163,6 @@ DebugCommandProcessor.prototype.evaluateRequest_ = function(request, response) {
         expression, Boolean(disable_break), additional_context_object);
     return;
   }
-};
-
-
-DebugCommandProcessor.prototype.getobjRequest_ = function(request, response) {
-  if (!request.arguments) {
-    return response.failed('Missing arguments');
-  }
-
-  // Pull out arguments.
-  var obj_id = request.arguments.obj_id;
-
-  // Check for legal arguments.
-  if (IS_UNDEFINED(obj_id)) {
-    return response.failed('Argument "obj_id" missing');
-  }
-
-  // Dump the object.
-  response.body = MakeMirror(%GetLOLObj(obj_id));
 };
 
 
@@ -2461,8 +2422,17 @@ DebugCommandProcessor.prototype.changeLiveRequest_ = function(
 
   var new_source = request.arguments.new_source;
 
-  var result_description = Debug.LiveEdit.SetScriptSource(the_script,
-      new_source, preview_only, change_log);
+  var result_description;
+  try {
+    result_description = Debug.LiveEdit.SetScriptSource(the_script,
+        new_source, preview_only, change_log);
+  } catch (e) {
+    if (e instanceof Debug.LiveEdit.Failure && "details" in e) {
+      response.failed(e.message, e.details);
+      return;
+    }
+    throw e;
+  }
   response.body = {change_log: change_log, result: result_description};
 
   if (!preview_only && !this.running_ && result_description.stack_modified) {
@@ -2551,86 +2521,6 @@ DebugCommandProcessor.prototype.gcRequest_ = function(request, response) {
   var after = %GetHeapUsage();
 
   response.body = { "before": before, "after": after };
-};
-
-
-DebugCommandProcessor.prototype.lolCaptureRequest_ =
-    function(request, response) {
-  response.body = %CaptureLOL();
-};
-
-
-DebugCommandProcessor.prototype.lolDeleteRequest_ =
-    function(request, response) {
-  var id = request.arguments.id;
-  var result = %DeleteLOL(id);
-  if (result) {
-    response.body = { id: id };
-  } else {
-    response.failed('Failed to delete: live object list ' + id + ' not found.');
-  }
-};
-
-
-DebugCommandProcessor.prototype.lolDiffRequest_ = function(request, response) {
-  var id1 = request.arguments.id1;
-  var id2 = request.arguments.id2;
-  var verbose = request.arguments.verbose;
-  var filter = request.arguments.filter;
-  if (verbose === true) {
-    var start = request.arguments.start;
-    var count = request.arguments.count;
-    response.body = %DumpLOL(id1, id2, start, count, filter);
-  } else {
-    response.body = %SummarizeLOL(id1, id2, filter);
-  }
-};
-
-
-DebugCommandProcessor.prototype.lolGetIdRequest_ = function(request, response) {
-  var address = request.arguments.address;
-  response.body = {};
-  response.body.id = %GetLOLObjId(address);
-};
-
-
-DebugCommandProcessor.prototype.lolInfoRequest_ = function(request, response) {
-  var start = request.arguments.start;
-  var count = request.arguments.count;
-  response.body = %InfoLOL(start, count);
-};
-
-
-DebugCommandProcessor.prototype.lolResetRequest_ = function(request, response) {
-  %ResetLOL();
-};
-
-
-DebugCommandProcessor.prototype.lolRetainersRequest_ =
-    function(request, response) {
-  var id = request.arguments.id;
-  var verbose = request.arguments.verbose;
-  var start = request.arguments.start;
-  var count = request.arguments.count;
-  var filter = request.arguments.filter;
-
-  response.body = %GetLOLObjRetainers(id, Mirror.prototype, verbose,
-                                      start, count, filter);
-};
-
-
-DebugCommandProcessor.prototype.lolPathRequest_ = function(request, response) {
-  var id1 = request.arguments.id1;
-  var id2 = request.arguments.id2;
-  response.body = {};
-  response.body.path = %GetLOLPath(id1, id2, Mirror.prototype);
-};
-
-
-DebugCommandProcessor.prototype.lolPrintRequest_ = function(request, response) {
-  var id = request.arguments.id;
-  response.body = {};
-  response.body.dump = %PrintLOLObj(id);
 };
 
 
