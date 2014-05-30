@@ -145,7 +145,7 @@ static double prog_start_time;
 static bool debugger_running;
 static uv_async_t dispatch_debug_messages_async;
 
-static Isolate* node_isolate = NULL;
+Isolate* node_isolate = NULL;
 
 // Declared in env-inl.h
 uv_key_t node_isolate_key;
