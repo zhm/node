@@ -54,12 +54,14 @@ namespace node {
 # define CHECK(expression)   assert(expression)
 #endif
 
+#ifndef CHECK_GE
 #define CHECK_EQ(a, b) CHECK((a) == (b))
 #define CHECK_GE(a, b) CHECK((a) >= (b))
 #define CHECK_GT(a, b) CHECK((a) > (b))
 #define CHECK_LE(a, b) CHECK((a) <= (b))
 #define CHECK_LT(a, b) CHECK((a) < (b))
 #define CHECK_NE(a, b) CHECK((a) != (b))
+#endif
 
 #define UNREACHABLE() abort()
 
