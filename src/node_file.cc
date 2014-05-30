@@ -449,7 +449,7 @@ static void StatNoException(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args.GetIsolate());              \
   int result = uv_fs_stat(uv_default_loop(), &req_wrap.req, *path, NULL);
   if (result < 0)
-    args.GetReturnValue().Set(v8::Boolean::New(false));
+    args.GetReturnValue().Set(v8::Boolean::New(node_isolate, false));
   else
     args.GetReturnValue().Set(
         BuildStatsObject(env, static_cast<const uv_stat_t*>(SYNC_REQ.ptr)));
@@ -484,7 +484,7 @@ static void LStatNoException(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args.GetIsolate());              \
   int result = uv_fs_lstat(uv_default_loop(), &req_wrap.req, *path, NULL);
   if (result < 0)
-    args.GetReturnValue().Set(v8::Boolean::New(false));
+    args.GetReturnValue().Set(v8::Boolean::New(node_isolate, false));
   else
     args.GetReturnValue().Set(
         BuildStatsObject(env, static_cast<const uv_stat_t*>(SYNC_REQ.ptr)));
