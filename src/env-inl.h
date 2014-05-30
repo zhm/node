@@ -34,6 +34,9 @@
 
 namespace node {
 
+// Defined in node.cc
+extern uv_key_t node_isolate_key;
+
 inline Environment::GCInfo::GCInfo()
     : type_(static_cast<v8::GCType>(0)),
       flags_(static_cast<v8::GCCallbackFlags>(0)),
@@ -75,10 +78,11 @@ inline Environment::IsolateData* Environment::IsolateData::Get(
 
 inline Environment::IsolateData* Environment::IsolateData::GetOrCreate(
     v8::Isolate* isolate) {
-  IsolateData* isolate_data = Get(isolate);
+  IsolateData* isolate_data = static_cast<IsolateData*>(
+      uv_key_get(&node_isolate_key));
   if (isolate_data == NULL) {
     isolate_data = new IsolateData(isolate);
-    isolate->SetData(kIsolateSlot, isolate_data);
+    uv_key_set(&node_isolate_key, isolate_data);
   }
   isolate_data->ref_count_ += 1;
   return isolate_data;
@@ -86,7 +90,7 @@ inline Environment::IsolateData* Environment::IsolateData::GetOrCreate(
 
 inline void Environment::IsolateData::Put() {
   if (--ref_count_ == 0) {
-    isolate()->SetData(kIsolateSlot, NULL);
+    uv_key_set(&node_isolate_key, NULL);
     delete this;
   }
 }
